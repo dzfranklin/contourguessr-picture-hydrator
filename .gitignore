@@ -1,3 +1,4 @@
 .local.env
 /ingest
+/out
 .idea
