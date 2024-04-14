@@ -48,20 +48,30 @@ func main() {
 	}
 
 	for region, ids := range ingests {
-		existingEntries := parseExisting(region)
+		processRegion(region, ids)
+	}
+}
 
-		var entries []Entry
-		for _, id := range ids {
-			var entry Entry
-			if existing, ok := existingEntries[id]; ok {
-				entry = existing
-			} else {
-				entry = createEntry(id)
-			}
-			entries = append(entries, entry)
+func processRegion(region string, ids []string) {
+	log.Printf("Processing region %s", region)
+	outF, err := os.OpenFile("out/"+region+".ndjson", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer outF.Close()
+	outEnc := json.NewEncoder(outF)
+
+	existingEntries := parseExisting(region)
+
+	for _, id := range ids {
+		if _, ok := existingEntries[id]; ok {
+			continue
 		}
 
-		writeOut(region, entries)
+		entry := createEntry(id)
+		if err := outEnc.Encode(entry); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
@@ -99,7 +109,7 @@ func parseExisting(region string) map[string]Entry {
 	defer f.Close()
 
 	dec := json.NewDecoder(f)
-	var entries map[string]Entry
+	entries := make(map[string]Entry)
 	for {
 		var entry Entry
 		err := dec.Decode(&entry)
@@ -112,21 +122,6 @@ func parseExisting(region string) map[string]Entry {
 		entries[entry.Id] = entry
 	}
 	return entries
-}
-
-func writeOut(region string, entries []Entry) {
-	f, err := os.Create("out/" + region + ".ndjson")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-
-	enc := json.NewEncoder(f)
-	for _, entry := range entries {
-		if err := enc.Encode(entry); err != nil {
-			log.Fatal(err)
-		}
-	}
 }
 
 type PictureSize struct {
@@ -211,9 +206,15 @@ func createEntry(id string) Entry {
 		ownerIcon = "https://farm" + fmt.Sprintf("%d", info.Photo.Owner.IconFarm) + ".staticflickr.com/" + info.Photo.Owner.IconServer + "/buddyicons/" + info.Photo.Owner.NSID + ".jpg"
 	}
 
-	locationSegments := []string{
+	potentialLocationSegments := []string{
 		info.Photo.Location.Neighborhood.Content, info.Photo.Location.Locality.Content,
 		info.Photo.Location.County.Content, info.Photo.Location.Region.Content, info.Photo.Location.Country.Content}
+	var locationSegments []string
+	for _, segment := range potentialLocationSegments {
+		if segment != "" {
+			locationSegments = append(locationSegments, segment)
+		}
+	}
 	locationDescription := strings.Join(locationSegments, ", ")
 
 	webpage := "https://flickr.com/photos/" + info.Photo.Owner.NSID
